@@ -498,7 +498,7 @@ void PlayerAsteroidCollision()
 
 		if ((gamestate.agentState == STATE_FLYING) && (HasCollided(asteroidIdObj.pos, playerObj.pos)) && (Timer < 0))
 		{
-			playerObj.rotation += Play::DegToRad(180);
+			playerObj.rotation += Play::DegToRad(180); 
 			gamestate.attachedId = asteroidIdObj.GetId();
 			gamestate.agentState = STATE_ASTEROID;
 		}
@@ -672,8 +672,11 @@ void FireLaser()
 		std::vector<int> laserIds{ Play::CollectGameObjectIDsByType(TYPE_LASER) }; 
 		for (int laserId : laserIds) 
 		{
-			GameObject& laserIdObj(Play::GetGameObject(laserId)); 
-			laserIdObj.rotation = rocketObj.rotation; 
+			GameObject& laserIdObj(Play::GetGameObject(laserId));
+			if (laserIdObj.pos == rocketObj.pos)
+			{
+				laserIdObj.rotation = rocketObj.rotation;
+			}
 		}
 		Play::PlayAudio("laser"); 
 	} 
