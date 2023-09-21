@@ -6,7 +6,7 @@ constexpr float DISPLAY_WIDTH{ 1280 };
 constexpr float DISPLAY_HEIGHT{ 720 };
 constexpr int DISPLAY_SCALE{ 1 };
 constexpr int AGENT_RADIUS{ 40 };
-constexpr int MAX_ASTEROIDS{ 0 };
+constexpr int MAX_ASTEROIDS{ 5 };
 constexpr int ASTEROID_RADIUS{ 48 };
 constexpr int MAX_METEOR{ 2 };
 constexpr int METEOR_RADIUS{ 30 };
@@ -498,6 +498,7 @@ void PlayerAsteroidCollision()
 
 		if ((gamestate.agentState == STATE_FLYING) && (HasCollided(asteroidIdObj.pos, playerObj.pos)) && (Timer < 0))
 		{
+			playerObj.rotation += Play::DegToRad(180);
 			gamestate.attachedId = asteroidIdObj.GetId();
 			gamestate.agentState = STATE_ASTEROID;
 		}
