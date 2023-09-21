@@ -6,7 +6,7 @@ constexpr float DISPLAY_WIDTH{ 1280 };
 constexpr float DISPLAY_HEIGHT{ 720 };
 constexpr int DISPLAY_SCALE{ 1 };
 constexpr int AGENT_RADIUS{ 40 };
-constexpr int MAX_ASTEROIDS{ 5 };
+constexpr int MAX_ASTEROIDS{ 0 };
 constexpr int ASTEROID_RADIUS{ 48 };
 constexpr int MAX_METEOR{ 2 };
 constexpr int METEOR_RADIUS{ 30 };
@@ -28,12 +28,14 @@ float MeteorRotation{ 0.1f };
 enum GameObjectType
 {
 	TYPE_AGENT = 0,
-	TYPE_GEM = 1,
-	TYPE_ASTEROID = 2,
-	TYPE_METEOR = 3,
-	TYPE_ASTEROID_PIECES = 4,
-	TYPE_BLUE_RING = 5,
+	TYPE_GEM,
+	TYPE_ASTEROID,
+	TYPE_METEOR,
+	TYPE_ASTEROID_PIECES,
+	TYPE_BLUE_RING,
 	TYPE_PARTICLE,
+	TYPE_SHIP,
+	TYPE_LASER,
 };
 
 enum agentState
@@ -42,7 +44,8 @@ enum agentState
 	STATE_ASTEROID,
 	STATE_DEAD,
 	STATE_FINISHED,
-	STATE_FINAL_STAGE,
+	STATE_GET_TO_SHIP,
+	STATE_DESTROY_METEORS,
 };
 
 struct GameState
@@ -74,7 +77,11 @@ void PlayerMeteorCollision();
 void PlayerDead();
 void GemsCollected();
 void GameCompleted();
-void NewPlayerPosition();
+void CreateShip();
+void RocketMovement();
+void MakeLaser();
+void FireLaser();
+void LaserMeteorCollision();
 bool HasCollided(Point2f pos1, Point2f pos2);
 bool GemHasCollided(Point2f pos1, Point2f pos2);
 
@@ -86,6 +93,7 @@ void MainGameEntry( PLAY_IGNORE_COMMAND_LINE )
 	Play::CentreAllSpriteOrigins();
 
 	Play::CreateGameObject(TYPE_AGENT, { DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 }, AGENT_RADIUS, "agent8_fly");
+	Play::CreateGameObject(TYPE_SHIP, { DISPLAY_WIDTH / 2, 650 }, 10, "rocket");
 
 	GameObject& asteroidObj{ Play::GetGameObjectByType(TYPE_ASTEROID) };
 	for (int i = 0; i < MAX_ASTEROIDS; i++)
@@ -150,9 +158,16 @@ bool MainGameUpdate( float elapsedTime )
 		DestroyTrail();
 	break;
 
-	case STATE_FINAL_STAGE:
-		NewPlayerPosition();
-		DestroyTrail();
+	case STATE_GET_TO_SHIP:
+		PlayerMovement();
+		CreateShip();
+	break;
+
+	case STATE_DESTROY_METEORS:
+		RocketMovement();
+		MakeLaser();
+		FireLaser();
+		LaserMeteorCollision();
 	break;
 
 	case STATE_DEAD:
@@ -301,7 +316,9 @@ void TrailPath()
 		GameObject& particleIdObj{ Play::GetGameObject(particleId) };
 		Play::DrawObjectRotated(particleIdObj,1.0f);
 	}
-}void UpdateTrail()
+}
+
+void UpdateTrail()
 {
 	std::vector<int> particleIds{ Play::CollectGameObjectIDsByType(TYPE_PARTICLE) };
 	for (int particleId : particleIds)
@@ -420,7 +437,6 @@ void UpdateGem()
 			Play::PlayAudio("reward");
 			SCORE += 100;
 		}
-
 	} 
 }
 
@@ -495,33 +511,33 @@ void PlayerAsteroidCollision()
 			Play::UpdateGameObject(playerObj);
 		}
 
-				if ((gamestate.agentState == STATE_ASTEROID) && (Play::KeyPressed(VK_SPACE)))
-				{
-					GameObject& attachedObj = Play::GetGameObject(gamestate.attachedId);
-					Timer = 20;
-					PlayerSpeed += 5;
-					gamestate.agentState = STATE_FLYING;
+		if ((gamestate.agentState == STATE_ASTEROID) && (Play::KeyPressed(VK_SPACE)))
+		{
+			GameObject& attachedObj = Play::GetGameObject(gamestate.attachedId);
+			Timer = 20;
+			PlayerSpeed += 5;
+			gamestate.agentState = STATE_FLYING;
 
-					Play::PlayAudio("explode"); 
+			Play::PlayAudio("explode"); 
 					
-					Play::CreateGameObject(TYPE_GEM, { attachedObj.pos }, 10, "gem");
-					GameObject& gemObj(Play::GetGameObject(TYPE_GEM));
-					gemObj.pos = attachedObj.pos; 
+			Play::CreateGameObject(TYPE_GEM, { attachedObj.pos }, 10, "gem");
+			GameObject& gemObj(Play::GetGameObject(TYPE_GEM));
+			gemObj.pos = attachedObj.pos; 
 
-					for (int n = 0; n <3; n++)
-					{
-						int id = Play::CreateGameObject(TYPE_ASTEROID_PIECES, { attachedObj.pos }, 10, "asteroid_pieces_3"); 
-						GameObject& piecesObj(Play::GetGameObject(id));
-						piecesObj.frame = n;
-						piecesObj.pos = gemObj.pos;
-						piecesObj.rotation = -n * Play::DegToRad(120);
-					}
+			for (int n = 0; n <3; n++)
+			{
+				int id = Play::CreateGameObject(TYPE_ASTEROID_PIECES, { attachedObj.pos }, 10, "asteroid_pieces_3"); 
+				GameObject& piecesObj(Play::GetGameObject(id));
+				piecesObj.frame = n;
+				piecesObj.pos = gemObj.pos;
+				piecesObj.rotation = -n * Play::DegToRad(120);
+			}
 
-					GemOffScreen();
+			GemOffScreen();
 
-					Play::UpdateGameObject(playerObj);
-					Play::DestroyGameObject(gamestate.attachedId);
-				}
+			Play::UpdateGameObject(playerObj);
+			Play::DestroyGameObject(gamestate.attachedId);
+		}
 	}
 }
 
@@ -582,7 +598,9 @@ void PlayerDead()
 
 void GemsCollected()
 {
-	if (SCORE == 500)
+	std::vector<int> asteroidIds{ Play::CollectGameObjectIDsByType(TYPE_ASTEROID) };
+	std::vector<int> gemIds{ Play::CollectGameObjectIDsByType(TYPE_GEM) };
+	if ( (asteroidIds.size() == 0) && (gemIds.size() == 0) )
 	{
 		gamestate.agentState = STATE_FINISHED;
 		Timer = 240;
@@ -597,13 +615,84 @@ void GameCompleted()
 	Play::DrawFontText("105px", "But its not safe to leave with these meteors around!", { 640, 500 }, Play::CENTRE);
 	if (Timer == 0)
 	{
-		gamestate.agentState = STATE_FINAL_STAGE;
+		gamestate.agentState = STATE_GET_TO_SHIP;
 	}
 }
 
-void NewPlayerPosition()
+void CreateShip()
 {
+	Play::DrawFontText("105px", "Quick, Get On Your Ship And Destroy All The Meteors!", { 640, 300 }, Play::CENTRE);
 	GameObject& playerObj{ Play::GetGameObjectByType(TYPE_AGENT) };
-	Play::SetSprite(playerObj, "agent8_right_7", 1.0f);
-	playerObj.pos = { DISPLAY_WIDTH / 2, 500 };
+	GameObject& rocketObj{ Play::GetGameObjectByType(TYPE_SHIP) };
+	Play::DrawObjectRotated(rocketObj, 1.0f);
+	if (HasCollided(playerObj.pos, rocketObj.pos))
+	{
+		gamestate.agentState = STATE_DESTROY_METEORS;
+	}
+} 
+
+void RocketMovement()
+{
+	GameObject& rocketObj{ Play::GetGameObjectByType(TYPE_SHIP) };
+	Play::DrawObjectRotated(rocketObj, 1.0f);
+	if (Play::KeyDown(VK_RIGHT))
+	{
+		rocketObj.rotation += 0.1;
+		Play::UpdateGameObject(rocketObj);
+	}
+	else if (Play::KeyDown(VK_LEFT))
+	{
+		rocketObj.rotation -= 0.1;
+		Play::UpdateGameObject(rocketObj);
+	}
+}
+
+void MakeLaser()
+{
+	//GameObject& rocketObj{ Play::GetGameObjectByType(TYPE_SHIP) }; 
+	std::vector<int> laserIds{ Play::CollectGameObjectIDsByType(TYPE_LASER) }; 
+	for (int laserId : laserIds) 
+	{
+		GameObject& laserIdObj(Play::GetGameObject(laserId));
+		Play::DrawObjectRotated(laserIdObj, 1.0f);
+		laserIdObj.pos.x += sin(laserIdObj.rotation) * 10; 
+		laserIdObj.pos.y -= cos(laserIdObj.rotation) * 10; 
+	} 
+}
+
+void FireLaser()
+{
+	GameObject& rocketObj{ Play::GetGameObjectByType(TYPE_SHIP) };
+
+	if (Play::KeyPressed(VK_SPACE))
+	{
+		Play::CreateGameObject(TYPE_LASER, { rocketObj.pos }, 10, "laser");  
+
+		std::vector<int> laserIds{ Play::CollectGameObjectIDsByType(TYPE_LASER) }; 
+		for (int laserId : laserIds) 
+		{
+			GameObject& laserIdObj(Play::GetGameObject(laserId)); 
+			laserIdObj.rotation = rocketObj.rotation; 
+		}
+		Play::PlayAudio("laser"); 
+	} 
+}
+
+void LaserMeteorCollision()
+{
+	std::vector<int> laserIds{ Play::CollectGameObjectIDsByType(TYPE_LASER) };
+	for (int laserId : laserIds)
+	{
+		GameObject& laserIdObj(Play::GetGameObject(laserId));
+		std::vector<int> meteorIds{ Play::CollectGameObjectIDsByType(TYPE_METEOR) }; 
+		for (int meteorId : meteorIds) 
+		{
+			GameObject& meteorIdObj = Play::GetGameObject(meteorId); 
+			if (GemHasCollided(meteorIdObj.pos, laserIdObj.pos))
+			{
+				Play::DestroyGameObject(meteorId);
+				Play::DestroyGameObject(laserId);
+			}
+		}
+	} 
 }
