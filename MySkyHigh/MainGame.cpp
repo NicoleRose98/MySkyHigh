@@ -6,7 +6,7 @@ constexpr float DISPLAY_WIDTH{ 1280 };
 constexpr float DISPLAY_HEIGHT{ 720 };
 constexpr int DISPLAY_SCALE{ 1 };
 constexpr int AGENT_RADIUS{ 40 };
-constexpr int MAX_ASTEROIDS{ 2 };
+constexpr int MAX_ASTEROIDS{ 6 };
 constexpr int ASTEROID_RADIUS{ 48 };
 constexpr int MAX_METEOR{ 2 };
 constexpr int METEOR_RADIUS{ 30 };
