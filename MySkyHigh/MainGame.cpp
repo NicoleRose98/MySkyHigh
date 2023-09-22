@@ -6,7 +6,7 @@ constexpr float DISPLAY_WIDTH{ 1280 };
 constexpr float DISPLAY_HEIGHT{ 720 };
 constexpr int DISPLAY_SCALE{ 1 };
 constexpr int AGENT_RADIUS{ 40 };
-constexpr int MAX_ASTEROIDS{ 5 };
+constexpr int MAX_ASTEROIDS{ 2 };
 constexpr int ASTEROID_RADIUS{ 48 };
 constexpr int MAX_METEOR{ 2 };
 constexpr int METEOR_RADIUS{ 30 };
@@ -40,17 +40,19 @@ enum GameObjectType
 
 enum agentState
 {
+	STATE_BEGIN_GAME,
 	STATE_FLYING,
 	STATE_ASTEROID,
 	STATE_DEAD,
 	STATE_FINISHED,
 	STATE_GET_TO_SHIP,
 	STATE_DESTROY_METEORS,
+	STATE_MISSION_COMPLETE,
 };
 
 struct GameState
 {
-	int agentState{ STATE_FLYING };
+	int agentState{ STATE_BEGIN_GAME };
 	int attachedId{ -1 };
 };
 
@@ -59,6 +61,7 @@ GameState gamestate;
 void Draw();
 void BorderLoop(GameObject& object);
 void PlayerMovement();
+void WelcomeScreen();
 void TrailPath();
 void UpdateTrail();
 void DestroyTrail();
@@ -82,6 +85,8 @@ void RocketMovement();
 void MakeLaser();
 void FireLaser();
 void LaserMeteorCollision();
+void MeteorsCleared();
+void MissionComplete();
 bool HasCollided(Point2f pos1, Point2f pos2);
 bool GemHasCollided(Point2f pos1, Point2f pos2);
 
@@ -92,7 +97,7 @@ void MainGameEntry( PLAY_IGNORE_COMMAND_LINE )
 	Play::LoadBackground("Data\\Backgrounds\\background.png");
 	Play::CentreAllSpriteOrigins();
 
-	Play::CreateGameObject(TYPE_AGENT, { DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 }, AGENT_RADIUS, "agent8_fly");
+	Play::CreateGameObject(TYPE_AGENT, { DISPLAY_WIDTH / 2, 650 }, AGENT_RADIUS, "agent8_fly");
 	Play::CreateGameObject(TYPE_SHIP, { DISPLAY_WIDTH / 2, 650 }, 10, "rocket");
 
 	GameObject& asteroidObj{ Play::GetGameObjectByType(TYPE_ASTEROID) };
@@ -127,29 +132,39 @@ bool MainGameUpdate( float elapsedTime )
 	PlayerSpeed *= 0.99;
 
 	Draw();
-	AsteroidMovement();
-	MeteorMovement();
-	UpdateGem();
+	UpdateGem(); 
 	UpdateRing();
-	PiecesMovement();
-	UpdateAsteroidPieces();
-	UpdateTrail();
-	
+
 	switch (gamestate.agentState)
 	{
+	case STATE_BEGIN_GAME:
+		AsteroidMovement(); 
+		MeteorMovement(); 
+		WelcomeScreen();
+	break;
+
 	case STATE_FLYING:
 		--Timer;
+		UpdateTrail();
+		UpdateAsteroidPieces();
  		PlayerMovement();
 	 	PlayerAsteroidCollision();
  		PlayerMeteorCollision();
-		bool HasCollided(Point2f pos1, Point2f pos2); 
 		TrailPath();
 		GemsCollected();
+		AsteroidMovement();
+		MeteorMovement();
+		PiecesMovement();
 	break;
 
 	case STATE_ASTEROID:
+		UpdateTrail();
+		AsteroidMovement();
+		MeteorMovement();
 		PlayerMovementOnAsteroid();
 		PlayerAsteroidCollision();
+		PiecesMovement();
+		UpdateAsteroidPieces();
 	break;
 
 	case STATE_FINISHED:
@@ -159,23 +174,32 @@ bool MainGameUpdate( float elapsedTime )
 	break;
 
 	case STATE_GET_TO_SHIP:
+		MeteorMovement();
 		PlayerMovement();
 		CreateShip();
 	break;
 
 	case STATE_DESTROY_METEORS:
-		RocketMovement();
+		MeteorMovement();
 		MakeLaser();
+		RocketMovement();
 		FireLaser();
 		LaserMeteorCollision();
+		MeteorsCleared();
 	break;
 
+	case STATE_MISSION_COMPLETE:
+		MissionComplete();
+	break; 
+
 	case STATE_DEAD:
+		AsteroidMovement();
+		MeteorMovement();
 		PlayerDead();
 		DestroyTrail();
 	break;
 	}
-
+	Play::DrawFontText("105px", "SCORE: " + std::to_string(SCORE), { DISPLAY_WIDTH / 2, 50 }, Play::CENTRE);
 	Play::PresentDrawingBuffer();
 
 	return Play::KeyDown( VK_ESCAPE );
@@ -193,8 +217,6 @@ void Draw()
 	Play::ClearDrawingBuffer(Play::cWhite);
 	
 	Play::DrawBackground();
-
-	Play::DrawFontText("105px", "SCORE: " + std::to_string(SCORE), { DISPLAY_WIDTH / 2, 50 }, Play::CENTRE);
 }
 
 
@@ -215,6 +237,21 @@ void BorderLoop(GameObject& object)
 	if (object.pos.x - 50 > DISPLAY_WIDTH)
 	{
 		object.pos.x = -49;
+	}
+}
+
+void WelcomeScreen()
+{
+	Play::DrawFontText("151px", "Welcome Agent8", { DISPLAY_WIDTH / 2, 200 }, Play::CENTRE);
+	Play::DrawFontText("105px", "Your Mission is to destoy these meteros", { DISPLAY_WIDTH / 2, 300 }, Play::CENTRE);
+	Play::DrawFontText("105px", "and collect all the treasure you find.", { DISPLAY_WIDTH / 2, 400 }, Play::CENTRE);
+	Play::DrawFontText("64px", "Press Space to begin you Mission.", { DISPLAY_WIDTH / 2, 550 }, Play::CENTRE);
+	GameObject& playerObj{ Play::GetGameObjectByType(TYPE_AGENT) };
+	Play::DrawObjectRotated(playerObj);
+
+	if (Play::KeyPressed(VK_SPACE))
+	{
+		gamestate.agentState = STATE_FLYING;
 	}
 }
 
@@ -271,7 +308,7 @@ void GemOffScreen()
 			gemIdObj.pos.y -= 50;
 		}
 	}
-}
+} 
 
 void PlayerMovement()
 {
@@ -584,8 +621,9 @@ void PlayerDead()
 	if (Timer <= 0)
 	{
 		playerObj.pos = { -100,-100 };
-		Play::DrawFontText("105px", "GAME OVER", { 600, 300 }, Play::CENTRE);
-		Play::DrawFontText("105px", "Press Space To Respawn", { 640, 400 }, Play::CENTRE);
+		Play::DrawFontText("105px", "OH NO,", { 600, 200 }, Play::CENTRE);
+		Play::DrawFontText("105px", "Youve been hit by a meteor!", { 600, 300 }, Play::CENTRE);
+		Play::DrawFontText("64px", "Press Space To Respawn", { 640, 400 }, Play::CENTRE);
 
 		if (Play::KeyPressed(VK_SPACE))
 		{
@@ -611,7 +649,7 @@ void GemsCollected()
 void GameCompleted()
 {
 	--Timer;
-	Play::DrawFontText("105px", "CONGRARTULATIONS!", { 600, 300 }, Play::CENTRE);
+	Play::DrawFontText("151px", "You did it!", { 600, 300 }, Play::CENTRE);
 	Play::DrawFontText("105px", "You have collected all the gems.", { 640, 400 }, Play::CENTRE);
 	Play::DrawFontText("105px", "But its not safe to leave with these meteors around!", { 640, 500 }, Play::CENTRE);
 	if (Timer == 0)
@@ -665,7 +703,7 @@ void FireLaser()
 {
 	GameObject& rocketObj{ Play::GetGameObjectByType(TYPE_SHIP) };
 
-	if (Play::KeyPressed(VK_SPACE))
+	if (Play::KeyDown(VK_SPACE))
 	{
 		Play::CreateGameObject(TYPE_LASER, { rocketObj.pos }, 10, "laser");  
 
@@ -699,4 +737,20 @@ void LaserMeteorCollision()
 			}
 		}
 	} 
+}
+
+void MeteorsCleared()
+{
+	std::vector<int> meteorIds{ Play::CollectGameObjectIDsByType(TYPE_METEOR) };
+	if (meteorIds.size() == 0)
+	{
+		gamestate.agentState = STATE_MISSION_COMPLETE;
+	}
+}
+
+void MissionComplete()
+{
+		Play::DrawFontText("151px", "Well Done Agent8", { 600, 300 }, Play::CENTRE);
+		Play::DrawFontText("105px", "It is now safe for you to fly", { 600, 400 }, Play::CENTRE);
+		Play::DrawFontText("64px", "Press esc to leave the game", { 600, 600 }, Play::CENTRE);
 }
